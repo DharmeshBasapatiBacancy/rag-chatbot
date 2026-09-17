@@ -16,7 +16,7 @@ import google.generativeai as genai
 load_dotenv()
 
 API_KEY = os.getenv("GOOGLE_API_KEY")
-GEN_MODEL = os.getenv("GEN_MODEL", "gemini-3.6-flash")
+GEN_MODEL = os.getenv("GEN_MODEL", "gemini-3.1-flash-lite")
 EMBED_MODEL = os.getenv("EMBED_MODEL", "gemini-embedding-001")
 
 if not API_KEY:

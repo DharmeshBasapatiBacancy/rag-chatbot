@@ -26,7 +26,7 @@ from langchain.chains.combine_documents import create_stuff_documents_chain
 
 load_dotenv()
 
-GEN_MODEL = os.getenv("GEN_MODEL", "gemini-2.5-flash")
+GEN_MODEL = os.getenv("GEN_MODEL", "gemini-3.1-flash-lite")
 EMBED_MODEL = os.getenv("EMBED_MODEL", "gemini-embedding-001")
 
 REFUSAL = "I don't have that information."
