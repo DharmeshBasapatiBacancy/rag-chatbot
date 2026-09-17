@@ -1,0 +1,15 @@
+# Secrets — NEVER commit these
+.env
+.streamlit/secrets.toml
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Vector store / uploads (regenerated at runtime)
+chroma_db/
+uploads/
+
+# OS / editor
+.DS_Store
