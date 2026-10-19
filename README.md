@@ -7,20 +7,44 @@ when the answer isn't in the document.
 Built for a learning task. Base demo document: a fictional sports league
 rulebook (`data/league_rules.md`, also generated as PDF/DOCX).
 
-## What it does (the six requirements)
-1. **Loads** a document — PDF, DOCX, TXT, or MD.
-2. **Splits** it into overlapping chunks (`RecursiveCharacterTextSplitter`).
-3. **Embeds** the chunks (`gemini-embedding-001`) and stores them in a Chroma
-   vector store.
-4. **Retrieves** the most relevant chunks per question (similarity search).
-5. Sends **chunks + chat history + question** to the LLM (`gemini-3.1-flash-lite`).
-6. **Answers only from the document** — otherwise replies exactly
+## What it does (the pipeline)
+1. **Parses** a document — PDF, DOCX, TXT, or MD — with structure awareness:
+   extracts body text **and tables** (rendered to Markdown so numbers keep their
+   row/column headers), de-scrambles **two-column** layouts, strips running
+   headers/footers, and tags every block with its **chapter/section breadcrumb**
+   and page (`parsing.py`).
+2. **Chunks** narrative text into overlapping pieces and keeps tables whole; each
+   chunk is prefixed with its breadcrumb so the retriever/LLM know which
+   section/region it belongs to.
+3. **Embeds** chunks with a **local** sentence-transformers model
+   (`all-MiniLM-L6-v2`) into an in-memory vector store — no API quota or rate
+   limit, works offline.
+4. **Retrieves** with a **hybrid** pipeline: BM25 (exact keywords/numbers) +
+   dense MMR (meaning), fused by an `EnsembleRetriever`, then re-ranked by a
+   local **cross-encoder** (`ms-marco-MiniLM-L-6-v2`) for precision. Candidate
+   pool scales with document size.
+5. Sends **chunks + chat history + question** to the LLM (`gemini-3.1-flash-lite`)
+   with a concise-answer, section-aware grounding prompt.
+6. **Reads charts & figures.** When a question references a figure/chart
+   (e.g. *"Figure 3.1 chart D"*), the relevant PDF page is rendered to an image
+   (PyMuPDF) and sent to the multimodal model, which reads values straight off
+   the bars/lines — facts that live only in the graphic, not the text layer.
+   A figure-label→page map (built at index time, picking the real chart page over
+   the list-of-figures) locates the right page. Vision runs **only** for visual
+   questions, so normal queries stay fast and quota-free.
+7. **Answers only from the document** — otherwise replies exactly
    `"I don't have that information."` (temperature=0 + a strict grounding prompt).
+
+These upgrades target the three document shapes in `RAG-Hands-On-Use-Cases`:
+plain narrative (GPO report), long structured report (World Bank GEP — keep
+*East Asia* separate from *Sub-Saharan Africa*), and short visual docs where
+facts live in tables/charts/footnotes (iMac environmental report).
 
 ## Project layout
 ```
-app.py            # Streamlit chat UI with PDF/DOCX upload
-rag.py            # RAG core: load, split, embed, retrieve, answer + guardrail
+app.py            # Streamlit chat UI; shows breadcrumb+page sources per answer
+parsing.py        # Structure-aware parsing: tables, 2-column, heading breadcrumbs
+rag.py            # Chunk, local-embed, hybrid retrieve + rerank, grounded answer
 check_model.py    # Verifies pinned models are LIVE via REAL API calls (run first!)
 verify_rag.py     # Full end-to-end test (in-doc, refusal, follow-up)
 verify_followup.py# Minimal memory + refusal test (few API calls)
@@ -28,6 +52,15 @@ data/             # Demo rulebook + fixture generator (md/pdf/docx)
 requirements.txt
 .env              # GOOGLE_API_KEY + pinned model names (git-ignored)
 ```
+
+## Embeddings run locally (no quota)
+Embeddings use a local sentence-transformers model, **not** the Gemini embedding
+API. A large PDF produces thousands of chunks, and the Gemini free tier caps
+embeddings at ~100/minute — so Gemini embeddings 429-fail on real documents.
+Local embeddings have no such limit and keep Gemini usage to answer-generation
+only. Tunable via `.env`: `EMBED_MODEL`, `RERANK_MODEL`, and `USE_RERANKER=0` to
+disable the cross-encoder for lower latency. First upload downloads the models
+(~90 MB embedder + ~80 MB reranker) once.
 
 ## Setup
 
@@ -46,7 +79,7 @@ VIRTUAL_ENV=.venv uv pip install -r requirements.txt
 # 3. Add your key to .env
 echo 'GOOGLE_API_KEY=your_key_here' > .env
 echo 'GEN_MODEL=gemini-3.1-flash-lite' >> .env
-echo 'EMBED_MODEL=gemini-embedding-001' >> .env
+echo 'EMBED_MODEL=sentence-transformers/all-MiniLM-L6-v2' >> .env
 ```
 
 Get a free key at https://aistudio.google.com.
@@ -57,9 +90,17 @@ Get a free key at https://aistudio.google.com.
 # ALWAYS verify models are live first (they get retired without notice)
 .venv/bin/python check_model.py
 
-# Launch the chatbot
-.venv/bin/streamlit run app.py
+# Launch the chatbot (run.sh sets the env vars that keep it stable)
+./run.sh
 ```
+
+`run.sh` exports `JE_ARROW_MALLOC_CONF=background_thread:false` — the key fix: it
+disables the pyarrow/jemalloc **background thread** that otherwise segfaults and
+kills the Streamlit server with no traceback (seen crashing mid-upload while
+indexing). Arrow's jemalloc is built with the `je_arrow_` prefix, so it reads
+`JE_ARROW_MALLOC_CONF`, **not** `MALLOC_CONF`. It also sets
+`ARROW_DEFAULT_MEMORY_POOL=system` and OpenMP guards for torch/pymupdf. The
+watcher is disabled in `.streamlit/config.toml`.
 
 Then open the browser tab, upload a PDF or DOCX in the sidebar, and ask away.
 
@@ -100,7 +141,7 @@ To run the automated tests:
    ```toml
    GOOGLE_API_KEY = "your_key_here"
    GEN_MODEL = "gemini-3.1-flash-lite"
-   EMBED_MODEL = "gemini-embedding-001"
+   EMBED_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
    ```
 6. Click **Deploy**. You'll get a public `*.streamlit.app` URL to share.
 

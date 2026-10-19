@@ -1,8 +1,16 @@
 langchain>=0.3,<0.4
+langchain-core>=0.3,<0.4
 langchain-google-genai>=2.0,<3
 langchain-community>=0.3,<0.4
+langchain-huggingface>=0.1,<0.2
 streamlit>=1.38,<2
 python-dotenv>=1.0
 pypdf>=4.0
+pdfplumber>=0.11
+pymupdf>=1.24
+python-docx>=1.1
 docx2txt>=0.8
 google-generativeai>=0.8
+# Local embeddings + cross-encoder reranker (no API quota)
+sentence-transformers>=3.0
+rank-bm25>=0.2

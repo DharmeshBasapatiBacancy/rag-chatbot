@@ -1,0 +1,13 @@
+# Docullence — minimalist black & green theme
+[theme]
+base = "dark"
+primaryColor = "#1FD68A"
+backgroundColor = "#0A0E0C"
+secondaryBackgroundColor = "#101613"
+textColor = "#DCE7E1"
+font = "sans serif"
+
+[server]
+# Avoid a Streamlit<->torch/transformers file-watcher crash (torchvision import)
+fileWatcherType = "none"
+headless = true
